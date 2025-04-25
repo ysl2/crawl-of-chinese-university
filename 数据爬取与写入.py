@@ -27,121 +27,112 @@
 # //*[@id="content-box"]/div[2]/table/tbody/tr[2]/td[6](北大)
 
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 from lxml import etree
 import time
 import json
 import pandas as pd
 
-# 获取页面数据/元素
 def get_data(html, xpath):
-    xpath_data = xpath
-    datas = html.xpath(xpath_data)
+    datas = html.xpath(xpath)
     if len(datas) != 0:
-        return [d.strip() for d in datas][0]
+        return [d.strip() for d in datas][0] if datas else ""
     else:
-        return [d.strip() for d in datas]
+        return ""
 
-# 解析大学信息
 def get_university(content, rank):
-    # 解析得到源码
     html = etree.HTML(content)
 
-    # 提取排名信息
-    xpath_university_ranks = f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[1]/div/text()"
-    ranks = get_data(html, xpath_university_ranks)
-    # 提取大学名称
-    xpath_university_name = f"//*[@id='content-box']//div[2]/table/tbody/tr[{rank}]/td[2]/div/div[1]/img/@alt"
-    name = get_data(html, xpath_university_name)
-    # 提取所在地区
-    xpath_university_district = f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[3]/text()"
-    district = get_data(html, xpath_university_district)
-    # 提取办学计划
-    xpath_university_Plan = f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[2]/div/div[2]/p/text()"
-    plan = get_data(html, xpath_university_Plan)
-    # 提取办学类型
-    xpath_university_type = f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[4]/text()"
-    UtyOfType = get_data(html, xpath_university_type)
-    # 提取总分
-    xpath_university_score = f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[5]/text()"
-    score = get_data(html, xpath_university_score)
-    # 提取办学层次
-    xpath_university_layer = f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[6]/text()"
-    layer = get_data(html, xpath_university_layer)
-
-    # 构建结果字典
     result = {
-        "排名": ranks,
-        "大学名称": name,
-        "所在地区": district,
-        "办学计划": plan,
-        "办学类型": UtyOfType,
-        "总分": score,
-        "层次": layer
+        "排名": get_data(html, f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[1]/div/text()"),
+        "大学名称": get_data(html, f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[2]/div/div[1]/a/text()") or
+                  get_data(html, f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[2]/div/div[1]/img/@alt"),
+        "所在地区": get_data(html, f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[3]/text()"),
+        "办学计划": get_data(html, f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[2]/div/div[2]/p/text()"),
+        "办学类型": get_data(html, f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[4]/text()"),
+        "总分": get_data(html, f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[5]/text()"),
+        "层次": get_data(html, f"//*[@id='content-box']/div[2]/table/tbody/tr[{rank}]/td[6]/text()")
     }
 
     return result
 
 if __name__ == "__main__":
-        # 配置 Chrome 无头浏览器
+    # 配置 Chrome 无头浏览器
     chrome_options = Options()
     chrome_options.add_argument('--headless')
     chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
 
-    path = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
-    chrome_options.binary_location = path
+    # 使用 webdriver_manager 自动管理 ChromeDriver 版本
+    service = Service(ChromeDriverManager().install())
+    browser = webdriver.Chrome(service=service, options=chrome_options)
 
-        # 启动 Chrome 浏览器
-    browser = webdriver.Chrome(options=chrome_options)
-    url = 'http://www.shanghairanking.cn/rankings/bcur/2023'
+    url = 'http://www.shanghairanking.cn/rankings/bcur/2025'
     browser.get(url)
 
-    time.sleep(1)
+    # 使用显式等待确保页面加载完成
+    WebDriverWait(browser, 10).until(
+        EC.presence_of_element_located((By.XPATH, "//*[@id='content-box']/div[2]/table"))
+    )
 
     data_list = []
-    for page in range(1+1, 21 + 1):
+
+    # 手动设置总页数为20页（根据实际情况调整）
+    total_pages = 20
+    print(f"总页数设置为: {total_pages}")
+
+    for page in range(1, total_pages + 1):
+        # 等待表格加载
+        time.sleep(2)
         page_source = browser.page_source
-        for i in range(0, 30):
-            university = get_university(page_source, i + 1)
-            data_list.append(university)
 
-        print(f"第{page - 1}页已经加载：")
+        # 获取当前页的大学数量
+        rows = len(etree.HTML(page_source).xpath("//*[@id='content-box']/div[2]/table/tbody/tr"))
 
-        if page == 21:
-            browser.save_screenshot("测试page20.png")
-        else:
-            # 模拟滚动到页面底部
-            js_bottom = "document.documentElement.scrollTop=100000"
-            browser.execute_script(js_bottom)
-            # 等待2秒，确保页面加载完成
-            time.sleep(2)
-            #点击下一页
-            nextPage = browser.find_element_by_link_text(f"{page}")
-            nextPage.click()
-            # 等待2秒，确保下一页加载完成
-            time.sleep(2)
+        for i in range(1, rows + 1):
+            university = get_university(page_source, i)
+            if university["大学名称"]:  # 只添加有数据的大学
+                data_list.append(university)
+
+        print(f"第{page}页已加载，共{rows}条数据")
+
+        if page < total_pages:
+            try:
+                # 尝试定位下一页按钮（使用更精确的定位方式）
+                next_button = WebDriverWait(browser, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//li[contains(@class,'ant-pagination-next')]/a"))
+                )
+                browser.execute_script("arguments[0].click();", next_button)
+
+                # 等待新页面加载
+                WebDriverWait(browser, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//*[@id='content-box']/div[2]/table"))
+                )
+            except Exception as e:
+                print(f"翻页时出错: {str(e)}")
+                # 如果点击下一页失败，尝试直接访问下一页URL
+                next_url = f"{url}?page={page+1}"
+                browser.get(next_url)
+                WebDriverWait(browser, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//*[@id='content-box']/div[2]/table"))
+                )
 
     browser.quit()
 
-    # 将 Python 对象列表写入 JSON 文件
+    # 保存数据
     with open("中国大学.json", "w", encoding='utf-8') as fp:
-        json.dump(data_list, fp, ensure_ascii=False)
+        json.dump(data_list, fp, ensure_ascii=False, indent=2)
 
-    # 读取 JSON 文件
-    with open("中国大学.json", "r", encoding='utf-8') as fp:
-        data_list = json.load(fp)
-
-    # 将数据转为 DataFrame
+    # 转换为Excel
     df = pd.DataFrame(data_list)
-
-    # 将 DataFrame 写入 Excel 文件
+    df.replace('', pd.NA, inplace=True)  # 将空字符串替换为NA
+    df.dropna(how='all', inplace=True)  # 删除全为空的行
     df.to_excel("中国大学.xlsx", index=False)
 
-    # 读取 Excel 文件
-    df1 = pd.read_excel("中国大学.xlsx")
-
-    # 去除无效字符 '[]'
-    df1.replace('[]', '',  inplace=True)
-
-    # 将处理后的 DataFrame 写回 Excel 文件
-    df1.to_excel("中国大学.xlsx", index=False)
+    print(f"数据爬取完成，共爬取{len(data_list)}条数据，已保存到中国大学.json和中国大学.xlsx")
